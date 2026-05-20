@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Kering · Cruzamento de Dados</title>
+
+  <!-- SheetJS para leitura/escrita de Excel -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ── Reset & Variables ─────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --navy-950: #060c1a;
+      --navy-900: #0b1427;
+      --navy-800: #0f1e3d;
+      --navy-700: #162852;
+      --navy-600: #1e3a6e;
+      --navy-500: #244880;
+      --blue-400: #3b7dd8;
+      --blue-300: #5b9cf6;
+      --blue-200: #93c5fd;
+      --blue-100: #dbeafe;
+      --accent:   #2563eb;
+      --accent-glow: rgba(37, 99, 235, 0.35);
+      --gold:     #f59e0b;
+      --green:    #10b981;
+      --red:      #ef4444;
+      --white:    #ffffff;
+      --text-primary:   #e2e8f0;
+      --text-secondary: #94a3b8;
+      --text-muted:     #475569;
+      --border:   rgba(59, 125, 216, 0.18);
+      --border-hover: rgba(91, 156, 246, 0.4);
+      --card-bg:  rgba(15, 30, 61, 0.7);
+      --radius:   14px;
+      --radius-sm: 8px;
+      --font: 'Sora', sans-serif;
+      --mono: 'JetBrains Mono', monospace;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: var(--font);
+      background: var(--navy-950);
+      color: var(--text-primary);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Background mesh ───────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background:
+        radial-gradient(ellipse 80% 50% at 20% 10%, rgba(37,99,235,0.12) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 40% at 80% 80%, rgba(22,40,82,0.5) 0%, transparent 60%);
+      pointer-events: none; z-index: 0;
+    }
+
+    /* ── Grid texture overlay ──────────────────────────── */
+    body::after {
+      content: '';
+      position: fixed; inset: 0;
+      background-image:
+        linear-gradient(rgba(59,125,216,0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(59,125,216,0.04) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none; z-index: 0;
+    }
+
+    /* ── Layout ────────────────────────────────────────── */
+    .wrapper {
+      position: relative; z-index: 1;
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 48px 24px 80px;
+    }
+
+    /* ── Header ────────────────────────────────────────── */
+    header { text-align: center; margin-bottom: 52px; }
+
+    .brand-pill {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: rgba(37,99,235,0.15);
+      border: 1px solid rgba(37,99,235,0.3);
+      border-radius: 999px;
+      padding: 6px 18px;
+      font-size: 11px; font-weight: 600; letter-spacing: 0.12em;
+      text-transform: uppercase; color: var(--blue-300);
+      margin-bottom: 22px;
+    }
+
+    .brand-pill span { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); display: inline-block; animation: pulse-dot 2s infinite; }
+
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.7); }
+    }
+
+    h1 {
+      font-size: clamp(26px, 5vw, 38px);
+      font-weight: 700;
+      line-height: 1.15;
+      letter-spacing: -0.03em;
+      color: var(--white);
+      margin-bottom: 12px;
+    }
+
+    h1 em {
+      font-style: normal;
+      background: linear-gradient(135deg, var(--blue-300), var(--accent));
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .subtitle {
+      font-size: 14px; color: var(--text-secondary); font-weight: 300; max-width: 480px; margin: 0 auto;
+      line-height: 1.7;
+    }
+
+    /* ── Step card ─────────────────────────────────────── */
+    .steps-grid {
+      display: flex; flex-direction: column; gap: 16px;
+      margin-bottom: 32px;
+    }
+
+    .step-card {
+      background: var(--card-bg);
+      border: 1px dashed var(--border); /* Mudado para dashed para sugerir drop */
+      border-radius: var(--radius);
+      padding: 22px 24px;
+      display: flex; align-items: center; gap: 20px;
+      transition: all 0.25s;
+      position: relative; overflow: hidden;
+    }
+
+    .step-card::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: linear-gradient(135deg, rgba(37,99,235,0.06) 0%, transparent 60%);
+      opacity: 0; transition: opacity 0.3s;
+    }
+
+    .step-card:hover { border-style: solid; border-color: var(--border-hover); box-shadow: 0 0 24px var(--accent-glow); }
+    .step-card:hover::before { opacity: 1; }
+
+    /* Novo estilo para quando está arrastando um arquivo por cima */
+    .step-card.drag-over {
+      border-color: var(--blue-300);
+      background: rgba(37, 99, 235, 0.15);
+      transform: scale(1.02);
+      border-style: solid;
+    }
+
+    .step-card.ready  { border-color: rgba(16,185,129,0.35); border-style: solid; }
+    .step-card.ready .step-num { background: rgba(16,185,129,0.15); color: var(--green); border-color: rgba(16,185,129,0.35); }
+
+    .step-num {
+      flex-shrink: 0;
+      width: 38px; height: 38px; border-radius: 50%;
+      background: rgba(37,99,235,0.12);
+      border: 1.5px solid rgba(37,99,235,0.3);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 700; color: var(--blue-300);
+      font-family: var(--mono);
+      transition: all 0.25s;
+    }
+
+    .step-info { flex: 1; min-width: 0; }
+
+    .step-title {
+      font-size: 13px; font-weight: 600; color: var(--white);
+      margin-bottom: 3px; letter-spacing: -0.01em;
+    }
+
+    .step-desc { font-size: 11.5px; color: var(--text-secondary); font-weight: 300; }
+
+    .step-actions { display: flex; align-items: center; gap: 10px; }
+
+    /* Hidden file input */
+    .file-input { display: none; }
+
+    /* Upload button */
+    .btn-upload {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 8px 16px;
+      border-radius: var(--radius-sm);
+      background: rgba(37,99,235,0.15);
+      border: 1px solid rgba(37,99,235,0.35);
+      color: var(--blue-300);
+      font-family: var(--font); font-size: 12px; font-weight: 600;
+      cursor: pointer; white-space: nowrap;
+      transition: all 0.2s;
+      text-decoration: none;
+    }
+
+    .btn-upload:hover {
+      background: rgba(37,99,235,0.28);
+      border-color: var(--blue-300);
+      color: var(--white);
+    }
+
+    .btn-upload svg { flex-shrink: 0; }
+
+    /* File badge */
+    .file-badge {
+      display: none; align-items: center; gap: 6px;
+      background: rgba(16,185,129,0.1);
+      border: 1px solid rgba(16,185,129,0.25);
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 11px; font-weight: 500; color: var(--green);
+      max-width: 180px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+    }
+
+    .file-badge.visible { display: flex; }
+
+    .file-badge .remove-file {
+      cursor: pointer; opacity: 0.6; font-size: 14px; line-height: 1;
+      transition: opacity 0.15s; flex-shrink: 0;
+    }
+
+    .file-badge .remove-file:hover { opacity: 1; color: var(--red); }
+
+    /* ── Divider ───────────────────────────────────────── */
+    .divider {
+      display: flex; align-items: center; gap: 14px;
+      margin: 28px 0;
+      color: var(--text-muted); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+    }
+
+    .divider::before, .divider::after {
+      content: ''; flex: 1; height: 1px; background: var(--border);
+    }
+
+    /* ── Action button ─────────────────────────────────── */
+    .btn-execute {
+      width: 100%;
+      padding: 18px 24px;
+      border-radius: var(--radius);
+      background: linear-gradient(135deg, var(--accent) 0%, #1d4ed8 100%);
+      border: none;
+      color: var(--white);
+      font-family: var(--font); font-size: 15px; font-weight: 700;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 10px;
+      letter-spacing: -0.02em;
+      transition: all 0.25s;
+      position: relative; overflow: hidden;
+      box-shadow: 0 4px 24px rgba(37,99,235,0.35);
+    }
+
+    .btn-execute::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: linear-gradient(135deg, rgba(255,255,255,0.1) 0%, transparent 60%);
+      opacity: 0; transition: opacity 0.2s;
+    }
+
+    .btn-execute:hover { transform: translateY(-2px); box-shadow: 0 8px 32px rgba(37,99,235,0.5); }
+    .btn-execute:hover::before { opacity: 1; }
+    .btn-execute:active { transform: translateY(0); }
+    .btn-execute:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+    /* ── Log / Status ──────────────────────────────────── */
+    .log-box {
+      margin-top: 28px;
+      background: rgba(6,12,26,0.8);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      display: none;
+    }
+
+    .log-box.visible { display: block; animation: slideUp 0.3s ease; }
+
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    .log-header {
+      display: flex; align-items: center; gap: 10px;
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--border);
+      font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--text-secondary);
+    }
+
+    .log-header .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--accent); animation: pulse-dot 1.5s infinite;
+    }
+
+    .log-content {
+      padding: 16px 18px;
+      font-family: var(--mono);
+      font-size: 12px; line-height: 1.8;
+      max-height: 260px; overflow-y: auto;
+      color: var(--text-secondary);
+    }
+
+    .log-content .log-ok   { color: var(--green); }
+    .log-content .log-warn { color: var(--gold); }
+    .log-content .log-err  { color: var(--red); }
+    .log-content .log-info { color: var(--blue-300); }
+
+    /* ── Progress bar ──────────────────────────────────── */
+    .progress-wrap {
+      height: 3px; background: var(--navy-800);
+      border-radius: 0 0 var(--radius) var(--radius);
+      overflow: hidden; display: none;
+    }
+
+    .progress-wrap.visible { display: block; }
+
+    .progress-bar {
+      height: 100%; width: 0%;
+      background: linear-gradient(90deg, var(--accent), var(--blue-300));
+      transition: width 0.4s ease;
+      border-radius: 2px;
+    }
+
+    /* ── Result card ───────────────────────────────────── */
+    .result-card {
+      display: none; margin-top: 20px;
+      background: rgba(16,185,129,0.07);
+      border: 1px solid rgba(16,185,129,0.25);
+      border-radius: var(--radius);
+      padding: 22px 24px;
+      animation: slideUp 0.35s ease;
+    }
+
+    .result-card.visible { display: block; }
+
+    .result-title {
+      font-size: 13px; font-weight: 700; color: var(--green);
+      margin-bottom: 6px; display: flex; align-items: center; gap: 8px;
+    }
+
+    .result-desc { font-size: 12px; color: var(--text-secondary); margin-bottom: 18px; }
+
+    .btn-download {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 11px 22px;
+      border-radius: var(--radius-sm);
+      background: var(--green);
+      border: none;
+      color: var(--navy-950);
+      font-family: var(--font); font-size: 13px; font-weight: 700;
+      cursor: pointer; text-decoration: none;
+      transition: all 0.2s;
+      box-shadow: 0 4px 16px rgba(16,185,129,0.3);
+    }
+
+    .btn-download:hover { transform: translateY(-1px); box-shadow: 0 6px 20px rgba(16,185,129,0.45); }
+
+    /* ── Stats row ─────────────────────────────────────── */
+    .stats-row {
+      display: flex; gap: 12px; margin-top: 16px;
+    }
+
+    .stat-pill {
+      flex: 1; padding: 10px 14px; border-radius: var(--radius-sm);
+      background: rgba(15,30,61,0.8); border: 1px solid var(--border);
+      text-align: center;
+    }
+
+    .stat-value { font-size: 20px; font-weight: 700; font-family: var(--mono); color: var(--white); }
+    .stat-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.07em; margin-top: 2px; }
+
+    /* ── Footer ────────────────────────────────────────── */
+    footer {
+      text-align: center; margin-top: 52px;
+      font-size: 11px; color: var(--text-muted);
+    }
+
+    footer a { color: var(--text-muted); text-decoration: none; }
+    footer a:hover { color: var(--blue-300); }
+
+    /* ── Scrollbar ─────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: var(--navy-900); }
+    ::-webkit-scrollbar-thumb { background: var(--navy-600); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--blue-400); }
+
+    /* ── Responsive ────────────────────────────────────── */
+    @media (max-width: 540px) {
+      .step-card { flex-wrap: wrap; gap: 14px; }
+      .step-actions { width: 100%; }
+      .stats-row { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="wrapper">
+
+  <!-- Header -->
+  <header>
+    <div class="brand-pill">
+      <span></span>
+      Engenharia de Dados · Kering
+    </div>
+    <h1>Cruzamento <em>Automático</em><br>de Bases</h1>
+    <p class="subtitle">Carregue as três planilhas abaixo ou arraste-as para as caixas. O processamento acontece inteiramente no seu navegador — nenhum dado é enviado para servidores.</p>
+  </header>
+
+  <!-- Step cards -->
+  <div class="steps-grid">
+
+    <!-- Matriz -->
+    <div class="step-card" id="card-matriz">
+      <div class="step-num" id="num-matriz">1</div>
+      <div class="step-info">
+        <div class="step-title">Base Itens Processos (Matriz)</div>
+        <div class="step-desc">Colunas utilizadas: col. 10 (Invoice) e col. 36 (SKU)</div>
+      </div>
+      <div class="step-actions">
+        <div class="file-badge" id="badge-matriz">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+          <span id="badge-matriz-name"></span>
+          <span class="remove-file" data-target="matriz" title="Remover arquivo">×</span>
+        </div>
+        <label class="btn-upload" for="file-matriz">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Selecionar ou Arrastar
+        </label>
+        <input type="file" id="file-matriz" class="file-input" accept=".xlsx,.xls" />
+      </div>
+    </div>
+
+    <!-- FUP -->
+    <div class="step-card" id="card-fup">
+      <div class="step-num" id="num-fup">2</div>
+      <div class="step-info">
+        <div class="step-title">Base FUP</div>
+        <div class="step-desc">Detecta automaticamente a aba com colunas SHIPMENT e INVOICE</div>
+      </div>
+      <div class="step-actions">
+        <div class="file-badge" id="badge-fup">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+          <span id="badge-fup-name"></span>
+          <span class="remove-file" data-target="fup" title="Remover arquivo">×</span>
+        </div>
+        <label class="btn-upload" for="file-fup">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Selecionar ou Arrastar
+        </label>
+        <input type="file" id="file-fup" class="file-input" accept=".xlsx,.xls" />
+      </div>
+    </div>
+
+    <!-- Catálogo -->
+    <div class="step-card" id="card-catalogo">
+      <div class="step-num" id="num-catalogo">3</div>
+      <div class="step-info">
+        <div class="step-title">Base Catálogo</div>
+        <div class="step-desc">Colunas utilizadas: col. 1 (Código Interno), col. 2 (Data Criação), col. 7 (Ativo)</div>
+      </div>
+      <div class="step-actions">
+        <div class="file-badge" id="badge-catalogo">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+          <span id="badge-catalogo-name"></span>
+          <span class="remove-file" data-target="catalogo" title="Remover arquivo">×</span>
+        </div>
+        <label class="btn-upload" for="file-catalogo">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Selecionar ou Arrastar
+        </label>
+        <input type="file" id="file-catalogo" class="file-input" accept=".xlsx,.xls" />
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Divider -->
+  <div class="divider">Processamento</div>
+
+  <!-- Execute -->
+  <button class="btn-execute" id="btn-executar" disabled>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+      <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+    </svg>
+    Executar Cruzamento de Dados
+  </button>
+
+  <!-- Log -->
+  <div class="log-box" id="log-box">
+    <div class="log-header">
+      <div class="dot"></div>
+      Log de Processamento
+    </div>
+    <div class="log-content" id="log-content"></div>
+    <div class="progress-wrap visible" id="progress-wrap">
+      <div class="progress-bar" id="progress-bar"></div>
+    </div>
+  </div>
+
+  <!-- Result -->
+  <div class="result-card" id="result-card">
+    <div class="result-title">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+      Processamento concluído com sucesso
+    </div>
+    <div class="result-desc" id="result-desc">O arquivo foi gerado e está pronto para download. Células com "Não identificado" estão destacadas em vermelho.</div>
+    <div class="stats-row" id="stats-row"></div>
+    <div style="margin-top: 16px;">
+      <button class="btn-download" id="btn-download">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Baixar Resultado (.xlsx)
+      </button>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer>
+    <p>Processamento 100% local · Nenhum dado é enviado para servidores · Kering Data Tools</p>
+  </footer>
+
+</div>
+
+<!-- ============================================================
+     JAVASCRIPT — Toda a lógica de dados
+     ============================================================ -->
+<script>
+/* ── Estado global ─────────────────────────────────────────── */
+const files = { matriz: null, fup: null, catalogo: null };
+let resultBlob = null;
+
+/* ── Helpers de UI ─────────────────────────────────────────── */
+function log(msg, type = 'info') {
+  const el = document.getElementById('log-content');
+  const line = document.createElement('div');
+  line.className = `log-${type}`;
+  const ts = new Date().toLocaleTimeString('pt-BR');
+  line.textContent = `[${ts}] ${msg}`;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+
+function setProgress(pct) {
+  document.getElementById('progress-bar').style.width = pct + '%';
+}
+
+function markCardReady(key) {
+  document.getElementById(`card-${key}`).classList.add('ready');
+  document.getElementById(`num-${key}`).textContent = '✓';
+}
+
+function unmarkCard(key) {
+  document.getElementById(`card-${key}`).classList.remove('ready');
+  document.getElementById(`num-${key}`).textContent = key === 'matriz' ? '1' : key === 'fup' ? '2' : '3';
+}
+
+function checkEnableButton() {
+  const ready = files.matriz && files.fup && files.catalogo;
+  document.getElementById('btn-executar').disabled = !ready;
+}
+
+/* ── Leitura de arquivo como ArrayBuffer ───────────────────── */
+function readFile(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => resolve(e.target.result);
+    reader.onerror = () => reject(new Error('Erro ao ler arquivo'));
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+/* ── Limpeza de chave (igual ao Python) ────────────────────── */
+function cleanKey(val) {
+  if (val === null || val === undefined) return 'NÃO IDENTIFICADO';
+  return String(val).trim().toUpperCase().replace(/\.0$/, '');
+}
+
+/* ── Lógica principal ─────────────── */
+async function processar() {
+  // Reset UI
+  document.getElementById('log-box').classList.add('visible');
+  document.getElementById('progress-wrap').classList.add('visible');
+  document.getElementById('result-card').classList.remove('visible');
+  document.getElementById('log-content').innerHTML = '';
+  setProgress(0);
+  resultBlob = null;
+  document.getElementById('btn-executar').disabled = true;
+
+  try {
+    /* ── 1. MATRIZ ─────────────────────────────────────────── */
+    log('Lendo Base Itens Processos (Matriz)…', 'info');
+    const bufMatriz = await readFile(files.matriz);
+    const wbMatriz = XLSX.read(bufMatriz, { type: 'array', cellDates: true });
+    const wsMatriz = wbMatriz.Sheets[wbMatriz.SheetNames[0]];
+
+    const rawMatriz = XLSX.utils.sheet_to_json(wsMatriz, { header: 1, defval: null, raw: true });
+    const dataMatriz = rawMatriz.slice(1);
+
+    const resultado = dataMatriz.map(row => ({
+      SKU:      cleanKey(row[35]),
+      Invoice: cleanKey(row[9])
+    }));
+
+    log(`✓ Matriz: ${resultado.length} linhas extraídas`, 'ok');
+    setProgress(20);
+
+    /* ── 2. FUP (varredura inteligente de abas) ────────────── */
+    log('Lendo Base FUP e detectando aba correta…', 'info');
+    const bufFup = await readFile(files.fup);
+    const wbFup = XLSX.read(bufFup, { type: 'array', cellDates: true });
+
+    let fupMap = null; 
+
+    for (const sheetName of wbFup.SheetNames) {
+      const wsFup = wbFup.Sheets[sheetName];
+      const header = XLSX.utils.sheet_to_json(wsFup, { header: 1, defval: null })[0] || [];
+      const colsUpper = header.map(c => String(c || '').trim().toUpperCase());
+
+      if (colsUpper.includes('SHIPMENT') && colsUpper.includes('INVOICE')) {
+        log(`✓ FUP: aba "${sheetName}" detectada com SHIPMENT + INVOICE`, 'ok');
+        const idxShip = colsUpper.indexOf('SHIPMENT');
+        const idxInv  = colsUpper.indexOf('INVOICE');
+
+        const rows = XLSX.utils.sheet_to_json(wsFup, { header: 1, defval: null, raw: true });
+        fupMap = new Map();
+        rows.slice(1).forEach(row => {
+          const inv  = cleanKey(row[idxInv]);
+          const ship = row[idxShip] !== null ? String(row[idxShip]).trim() : null;
+          if (!fupMap.has(inv)) fupMap.set(inv, ship);
+        });
+        break;
+      }
+    }
+
+    if (!fupMap) {
+      log('⚠ Nenhuma aba com SHIPMENT+INVOICE encontrada — usando fallback (colunas 1 e 2)', 'warn');
+      const wsFup = wbFup.Sheets[wbFup.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(wsFup, { header: 1, defval: null, raw: true });
+      fupMap = new Map();
+      rows.slice(1).forEach(row => {
+        const inv  = cleanKey(row[1]);
+        const ship = row[0] !== null ? String(row[0]).trim() : null;
+        if (!fupMap.has(inv)) fupMap.set(inv, ship);
+      });
+    }
+
+    log(`✓ FUP: ${fupMap.size} invoices mapeadas`, 'ok');
+    setProgress(45);
+
+    /* ── 3. CATÁLOGO ───────────────────────────────────────── */
+    log('Lendo Base Catálogo…', 'info');
+    const bufCat = await readFile(files.catalogo);
+    const wbCat = XLSX.read(bufCat, { type: 'array', cellDates: true });
+    const wsCat = wbCat.Sheets[wbCat.SheetNames[0]];
+    const rawCat = XLSX.utils.sheet_to_json(wsCat, { header: 1, defval: null, raw: true });
+
+    const catMap = new Map(); 
+    rawCat.slice(1).forEach(row => {
+      const cod  = cleanKey(row[0]);
+      if (!catMap.has(cod)) {
+        let dataCriacao = row[1];
+        if (dataCriacao !== null && dataCriacao !== undefined) {
+          if (dataCriacao instanceof Date) {
+            dataCriacao = dataCriacao.toLocaleDateString('pt-BR');
+          } else if (typeof dataCriacao === 'number') {
+            const d = XLSX.SSF.parse_date_code(dataCriacao);
+            if (d) {
+              dataCriacao = `${String(d.d).padStart(2,'0')}/${String(d.m).padStart(2,'0')}/${d.y}`;
+            } else {
+              dataCriacao = String(dataCriacao);
+            }
+          } else {
+            dataCriacao = String(dataCriacao).trim();
+          }
+        }
+        const ativo = row[6] !== null && row[6] !== undefined ? String(row[6]).trim() : null;
+        catMap.set(cod, { dataCriacao, ativo });
+      }
+    });
+
+    log(`✓ Catálogo: ${catMap.size} códigos mapeados`, 'ok');
+    setProgress(65);
+
+    /* ── 4. CRUZAMENTOS ────────────────────────────────────── */
+    log('Executando cruzamentos (PROCV)…', 'info');
+
+    let naoIdShipment = 0, naoIdData = 0, naoIdAtivo = 0;
+
+    const final = resultado.map(row => {
+      const shipment = fupMap.has(row.Invoice) ? (fupMap.get(row.Invoice) ?? 'Não identificado') : 'Não identificado';
+      const cat = catMap.get(row.SKU);
+      const dataCriacao = cat?.dataCriacao ?? 'Não identificado';
+      const ativo       = cat?.ativo       ?? 'Não identificado';
+
+      if (shipment   === 'Não identificado') naoIdShipment++;
+      if (dataCriacao === 'Não identificado') naoIdData++;
+      if (ativo       === 'Não identificado') naoIdAtivo++;
+
+      return { SKU: row.SKU, Invoice: row.Invoice, SHIPMENT: shipment, 'Data Criação': dataCriacao, Ativo: ativo };
+    });
+
+    log(`✓ Cruzamento concluído — ${final.length} registros gerados`, 'ok');
+    log(`  ↳ SHIPMENT não identificado: ${naoIdShipment}`, naoIdShipment > 0 ? 'warn' : 'ok');
+    log(`  ↳ Data Criação não identificado: ${naoIdData}`, naoIdData > 0 ? 'warn' : 'ok');
+    log(`  ↳ Ativo não identificado: ${naoIdAtivo}`, naoIdAtivo > 0 ? 'warn' : 'ok');
+    setProgress(80);
+
+    /* ── 5. GERAR XLSX COM CORES ───────────────────────────── */
+    log('Gerando arquivo Excel com formatação…', 'info');
+
+    const wbOut = XLSX.utils.book_new();
+    const wsOut = XLSX.utils.json_to_sheet(final);
+
+    const cols   = ['SKU', 'Invoice', 'SHIPMENT', 'Data Criação', 'Ativo'];
+    const idxMap = {};
+    cols.forEach((c, i) => { idxMap[c] = i; });
+
+    const headerFill = { patternType: 'solid', fgColor: { rgb: '0F1E3D' } };
+    const headerFont = { bold: true, color: { rgb: 'DBEAFE' } };
+    cols.forEach((c, i) => {
+      const cellRef = XLSX.utils.encode_cell({ r: 0, c: i });
+      if (!wsOut[cellRef]) wsOut[cellRef] = {};
+      wsOut[cellRef].s = { fill: headerFill, font: headerFont };
+    });
+
+    const redFill  = { patternType: 'solid', fgColor: { rgb: 'FF0000' } };
+    const redFont  = { color: { rgb: 'FFFFFF' }, bold: true };
+    const redCols  = ['SHIPMENT', 'Data Criação', 'Ativo'];
+
+    final.forEach((row, ri) => {
+      redCols.forEach(col => {
+        if (row[col] === 'Não identificado') {
+          const cellRef = XLSX.utils.encode_cell({ r: ri + 1, c: idxMap[col] });
+          if (!wsOut[cellRef]) wsOut[cellRef] = { v: 'Não identificado', t: 's' };
+          wsOut[cellRef].s = { fill: redFill, font: redFont };
+        }
+      });
+    });
+
+    wsOut['!cols'] = cols.map(c => ({ wch: Math.max(c.length + 4, 18) }));
+
+    XLSX.utils.book_append_sheet(wbOut, wsOut, 'Resultado');
+    const xlsxBytes = XLSX.write(wbOut, { bookType: 'xlsx', type: 'array', cellStyles: true });
+    resultBlob = new Blob([xlsxBytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+    setProgress(100);
+    log('✓ Arquivo gerado com sucesso!', 'ok');
+
+    /* ── 6. MOSTRAR RESULTADO ──────────────────────────────── */
+    const statsRow = document.getElementById('stats-row');
+    statsRow.innerHTML = `
+      <div class="stat-pill">
+        <div class="stat-value">${final.length.toLocaleString('pt-BR')}</div>
+        <div class="stat-label">Registros</div>
+      </div>
+      <div class="stat-pill">
+        <div class="stat-value" style="color:var(--red)">${naoIdShipment.toLocaleString('pt-BR')}</div>
+        <div class="stat-label">SHIPMENT n/id</div>
+      </div>
+      <div class="stat-pill">
+        <div class="stat-value" style="color:var(--red)">${naoIdData.toLocaleString('pt-BR')}</div>
+        <div class="stat-label">Data n/id</div>
+      </div>
+      <div class="stat-pill">
+        <div class="stat-value" style="color:var(--red)">${naoIdAtivo.toLocaleString('pt-BR')}</div>
+        <div class="stat-label">Ativo n/id</div>
+      </div>
+    `;
+
+    document.getElementById('result-card').classList.add('visible');
+
+  } catch (err) {
+    log(`ERRO: ${err.message}`, 'err');
+    console.error(err);
+  } finally {
+    document.getElementById('btn-executar').disabled = false;
+    checkEnableButton();
+  }
+}
+
+/* ── Tratar Arquivo Selecionado/Arrastado ──────────────────── */
+function handleFileSelect(key, file) {
+  if (!file) return;
+  // Validação básica para garantir que é Excel
+  if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
+    alert('Por favor, envie um arquivo Excel (.xlsx ou .xls).');
+    return;
+  }
+
+  files[key] = file;
+  
+  const badge = document.getElementById(`badge-${key}`);
+  const badgeName = document.getElementById(`badge-${key}-name`);
+  
+  badgeName.textContent = file.name.length > 22 ? file.name.slice(0, 20) + '…' : file.name;
+  badge.classList.add('visible');
+  markCardReady(key);
+  checkEnableButton();
+  
+  // Esconde resultado e log anteriores se o usuário trocar um arquivo
+  document.getElementById('result-card').classList.remove('visible');
+  document.getElementById('log-box').classList.remove('visible');
+}
+
+/* ── Inicializar Eventos de Drag & Drop e Click ────────────── */
+['matriz', 'fup', 'catalogo'].forEach(key => {
+  const input = document.getElementById(`file-${key}`);
+  const card = document.getElementById(`card-${key}`);
+
+  // Evento padrão do botão (Click)
+  input.addEventListener('change', () => {
+    handleFileSelect(key, input.files[0]);
+  });
+
+  // Eventos de Drag and Drop
+  card.addEventListener('dragover', (e) => {
+    e.preventDefault(); // Necessário para permitir o drop
+    card.classList.add('drag-over');
+  });
+
+  card.addEventListener('dragleave', (e) => {
+    e.preventDefault();
+    card.classList.remove('drag-over');
+  });
+
+  card.addEventListener('drop', (e) => {
+    e.preventDefault();
+    card.classList.remove('drag-over');
+    
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const droppedFile = e.dataTransfer.files[0];
+      handleFileSelect(key, droppedFile);
+      
+      // Sincroniza o input real com o arquivo arrastado (opcional, mas boa prática)
+      const dataTransfer = new DataTransfer();
+      dataTransfer.items.add(droppedFile);
+      input.files = dataTransfer.files;
+    }
+  });
+});
+
+/* ── Remover arquivo ───────────────────────────────────────── */
+document.querySelectorAll('.remove-file').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const key = btn.dataset.target;
+    files[key] = null;
+    document.getElementById(`file-${key}`).value = '';
+    document.getElementById(`badge-${key}`).classList.remove('visible');
+    unmarkCard(key);
+    checkEnableButton();
+  });
+});
+
+/* ── Executar ──────────────────────────────────────────────── */
+document.getElementById('btn-executar').addEventListener('click', processar);
+
+/* ── Download ──────────────────────────────────────────────── */
+document.getElementById('btn-download').addEventListener('click', () => {
+  if (!resultBlob) return;
+  const url = URL.createObjectURL(resultBlob);
+  const a = document.createElement('a');
+  const ts = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `Kering_Resultado_${ts}.xlsx`;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+</script>
+</body>
+</html>
