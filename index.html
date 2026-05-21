@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Kering · Cruzamento de Dados</title>
 
-  <!-- SheetJS para leitura/escrita de Excel -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<!-- SheetJS Style para habilitar a pintura de células em vermelho -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
   <!-- Google Fonts -->
   <link href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
 
@@ -432,7 +432,7 @@
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           Selecionar ou Arrastar
         </label>
-        <input type="file" id="file-matriz" class="file-input" accept=".xlsx,.xls" />
+        <input type="file" id="file-matriz" class="file-input" accept=".xlsx,.xls" multiple />
       </div>
     </div>
 
@@ -531,7 +531,7 @@
      ============================================================ -->
 <script>
 /* ── Estado global ─────────────────────────────────────────── */
-const files = { matriz: null, fup: null, catalogo: null };
+const files = { matriz: [], fup: null, catalogo: null }; // Matriz agora é array
 let resultBlob = null;
 
 /* ── Helpers de UI ─────────────────────────────────────────── */
@@ -560,7 +560,7 @@ function unmarkCard(key) {
 }
 
 function checkEnableButton() {
-  const ready = files.matriz && files.fup && files.catalogo;
+  const ready = files.matriz.length > 0 && files.fup && files.catalogo;
   document.getElementById('btn-executar').disabled = !ready;
 }
 
@@ -592,21 +592,32 @@ async function processar() {
   document.getElementById('btn-executar').disabled = true;
 
   try {
-    /* ── 1. MATRIZ ─────────────────────────────────────────── */
-    log('Lendo Base Itens Processos (Matriz)…', 'info');
-    const bufMatriz = await readFile(files.matriz);
-    const wbMatriz = XLSX.read(bufMatriz, { type: 'array', cellDates: true });
-    const wsMatriz = wbMatriz.Sheets[wbMatriz.SheetNames[0]];
+/* ── 1. MATRIZ ─────────────────────────────────────────── */
+    log(`Lendo ${files.matriz.length} arquivo(s) da Base Itens Processos (Matriz)…`, 'info');
+    let resultado = [];
 
-    const rawMatriz = XLSX.utils.sheet_to_json(wsMatriz, { header: 1, defval: null, raw: true });
-    const dataMatriz = rawMatriz.slice(1);
+    for (let i = 0; i < files.matriz.length; i++) {
+      const file = files.matriz[i];
+      const bufMatriz = await readFile(file);
+      const wbMatriz = XLSX.read(bufMatriz, { type: 'array', cellDates: true });
+      
+      const nomeAba = "Integração Mult";
+      if (!wbMatriz.Sheets[nomeAba]) {
+        throw new Error(`A aba "${nomeAba}" não foi encontrada no arquivo: ${file.name}`);
+      }
+      
+      const wsMatriz = wbMatriz.Sheets[nomeAba];
+      const rawMatriz = XLSX.utils.sheet_to_json(wsMatriz, { header: 1, defval: null, raw: true });
+      const dataMatriz = rawMatriz.slice(1);
 
-    const resultado = dataMatriz.map(row => ({
-      SKU:      cleanKey(row[35]),
-      Invoice: cleanKey(row[9])
-    }));
+      const resParcial = dataMatriz.map(row => ({
+        SKU:      cleanKey(row[35]),
+        Invoice:  cleanKey(row[9])
+      }));
+      resultado = resultado.concat(resParcial);
+    }
 
-    log(`✓ Matriz: ${resultado.length} linhas extraídas`, 'ok');
+    log(`✓ Matriz: ${resultado.length} linhas extraídas no total da aba "Integração Mult"`, 'ok');
     setProgress(20);
 
     /* ── 2. FUP (varredura inteligente de abas) ────────────── */
@@ -710,41 +721,79 @@ async function processar() {
     log(`  ↳ Ativo não identificado: ${naoIdAtivo}`, naoIdAtivo > 0 ? 'warn' : 'ok');
     setProgress(80);
 
-    /* ── 5. GERAR XLSX COM CORES ───────────────────────────── */
+/* ── 5. SEPARAÇÃO E GERAÇÃO DO XLSX COM CORES E TABELAS ──── */
     log('Gerando arquivo Excel com formatação…', 'info');
 
+    // Agrupar por SHIPMENT para avaliar as regras
+    const shipGroups = {};
+    final.forEach(row => {
+      const ship = row.SHIPMENT;
+      if (!shipGroups[ship]) shipGroups[ship] = [];
+      shipGroups[ship].push(row);
+    });
+
+    const okList = [];
+    const verificarList = [];
+
+    Object.keys(shipGroups).forEach(ship => {
+      const rows = shipGroups[ship];
+      // Verifica se TODAS as linhas deste shipment têm Ativo === "Sim" (ignorando maiúsculas/minúsculas)
+      const isOk = rows.every(r => String(r.Ativo).trim().toUpperCase() === 'SIM');
+      
+      if (isOk) {
+        okList.push(...rows);
+      } else {
+        verificarList.push(...rows);
+      }
+    });
+
     const wbOut = XLSX.utils.book_new();
-    const wsOut = XLSX.utils.json_to_sheet(final);
 
-    const cols   = ['SKU', 'Invoice', 'SHIPMENT', 'Data Criação', 'Ativo'];
-    const idxMap = {};
-    cols.forEach((c, i) => { idxMap[c] = i; });
+    // Função interna para criar aba com Cores e AutoFiltro (estilo Tabela)
+    function createStyledSheet(dataArray) {
+      if(dataArray.length === 0) return XLSX.utils.json_to_sheet([{ Mensagem: "Nenhum dado que se aplique" }]);
+      
+      const ws = XLSX.utils.json_to_sheet(dataArray);
+      const cols = ['SKU', 'Invoice', 'SHIPMENT', 'Data Criação', 'Ativo'];
+      const idxMap = {}; cols.forEach((c, i) => { idxMap[c] = i; });
 
-    const headerFill = { patternType: 'solid', fgColor: { rgb: '0F1E3D' } };
-    const headerFont = { bold: true, color: { rgb: 'DBEAFE' } };
-    cols.forEach((c, i) => {
-      const cellRef = XLSX.utils.encode_cell({ r: 0, c: i });
-      if (!wsOut[cellRef]) wsOut[cellRef] = {};
-      wsOut[cellRef].s = { fill: headerFill, font: headerFont };
-    });
-
-    const redFill  = { patternType: 'solid', fgColor: { rgb: 'FF0000' } };
-    const redFont  = { color: { rgb: 'FFFFFF' }, bold: true };
-    const redCols  = ['SHIPMENT', 'Data Criação', 'Ativo'];
-
-    final.forEach((row, ri) => {
-      redCols.forEach(col => {
-        if (row[col] === 'Não identificado') {
-          const cellRef = XLSX.utils.encode_cell({ r: ri + 1, c: idxMap[col] });
-          if (!wsOut[cellRef]) wsOut[cellRef] = { v: 'Não identificado', t: 's' };
-          wsOut[cellRef].s = { fill: redFill, font: redFont };
-        }
+      // Cabeçalho (Fundo azul escuro, letra branca)
+      const headerFill = { patternType: 'solid', fgColor: { rgb: '0F1E3D' } };
+      const headerFont = { bold: true, color: { rgb: 'DBEAFE' } };
+      cols.forEach((c, i) => {
+        const cellRef = XLSX.utils.encode_cell({ r: 0, c: i });
+        if (!ws[cellRef]) ws[cellRef] = {};
+        ws[cellRef].s = { fill: headerFill, font: headerFont };
       });
-    });
 
-    wsOut['!cols'] = cols.map(c => ({ wch: Math.max(c.length + 4, 18) }));
+      // Células "Não identificado" (Fundo vermelho, letra branca)
+      const redFill  = { patternType: 'solid', fgColor: { rgb: 'FF0000' } };
+      const redFont  = { color: { rgb: 'FFFFFF' }, bold: true };
+      const redCols  = ['SHIPMENT', 'Data Criação', 'Ativo'];
 
-    XLSX.utils.book_append_sheet(wbOut, wsOut, 'Resultado');
+      dataArray.forEach((row, ri) => {
+        redCols.forEach(col => {
+          if (row[col] === 'Não identificado') {
+            const cellRef = XLSX.utils.encode_cell({ r: ri + 1, c: idxMap[col] });
+            if (!ws[cellRef]) ws[cellRef] = { v: 'Não identificado', t: 's' };
+            ws[cellRef].s = { fill: redFill, font: redFont };
+          }
+        });
+      });
+
+      // Ajuste de largura das colunas e AutoFiltro (Simula a Tabela do Excel)
+      ws['!cols'] = cols.map(c => ({ wch: Math.max(c.length + 4, 18) }));
+      const range = XLSX.utils.decode_range(ws['!ref']);
+      ws['!autofilter'] = { ref: XLSX.utils.encode_range(range) };
+
+      return ws;
+    }
+
+    // Adicionando as 3 abas solicitadas
+    XLSX.utils.book_append_sheet(wbOut, createStyledSheet(final), 'Geral');
+    XLSX.utils.book_append_sheet(wbOut, createStyledSheet(okList), 'Shipments OK');
+    XLSX.utils.book_append_sheet(wbOut, createStyledSheet(verificarList), 'Shipments a Verificar');
+
     const xlsxBytes = XLSX.write(wbOut, { bookType: 'xlsx', type: 'array', cellStyles: true });
     resultBlob = new Blob([xlsxBytes], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
 
@@ -783,26 +832,36 @@ async function processar() {
   }
 }
 
-/* ── Tratar Arquivo Selecionado/Arrastado ──────────────────── */
-function handleFileSelect(key, file) {
-  if (!file) return;
-  // Validação básica para garantir que é Excel
-  if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
-    alert('Por favor, envie um arquivo Excel (.xlsx ou .xls).');
-    return;
-  }
-
-  files[key] = file;
+/* ── Tratar Arquivo Selecionado/Arrastado (Suporte a múltiplos arquivos) ── */
+function handleFileSelect(key, fileList) {
+  if (!fileList || fileList.length === 0) return;
   
   const badge = document.getElementById(`badge-${key}`);
   const badgeName = document.getElementById(`badge-${key}-name`);
+
+  if (key === 'matriz') {
+    // Transforma a lista do input em array real e filtra apenas Excel
+    const newFiles = Array.from(fileList).filter(f => f.name.endsWith('.xlsx') || f.name.endsWith('.xls'));
+    if (newFiles.length === 0) {
+      alert('Por favor, envie arquivos Excel (.xlsx ou .xls).');
+      return;
+    }
+    files.matriz = newFiles; // Substitui pelos novos selecionados
+    badgeName.textContent = files.matriz.length === 1 ? files.matriz[0].name : `${files.matriz.length} arquivos selecionados`;
+  } else {
+    const file = fileList[0];
+    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
+      alert('Por favor, envie um arquivo Excel (.xlsx ou .xls).');
+      return;
+    }
+    files[key] = file;
+    badgeName.textContent = file.name.length > 22 ? file.name.slice(0, 20) + '…' : file.name;
+  }
   
-  badgeName.textContent = file.name.length > 22 ? file.name.slice(0, 20) + '…' : file.name;
   badge.classList.add('visible');
   markCardReady(key);
   checkEnableButton();
   
-  // Esconde resultado e log anteriores se o usuário trocar um arquivo
   document.getElementById('result-card').classList.remove('visible');
   document.getElementById('log-box').classList.remove('visible');
 }
@@ -812,14 +871,12 @@ function handleFileSelect(key, file) {
   const input = document.getElementById(`file-${key}`);
   const card = document.getElementById(`card-${key}`);
 
-  // Evento padrão do botão (Click)
   input.addEventListener('change', () => {
-    handleFileSelect(key, input.files[0]);
+    handleFileSelect(key, input.files);
   });
 
-  // Eventos de Drag and Drop
   card.addEventListener('dragover', (e) => {
-    e.preventDefault(); // Necessário para permitir o drop
+    e.preventDefault();
     card.classList.add('drag-over');
   });
 
@@ -833,13 +890,8 @@ function handleFileSelect(key, file) {
     card.classList.remove('drag-over');
     
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const droppedFile = e.dataTransfer.files[0];
-      handleFileSelect(key, droppedFile);
-      
-      // Sincroniza o input real com o arquivo arrastado (opcional, mas boa prática)
-      const dataTransfer = new DataTransfer();
-      dataTransfer.items.add(droppedFile);
-      input.files = dataTransfer.files;
+      handleFileSelect(key, e.dataTransfer.files);
+      input.files = e.dataTransfer.files;
     }
   });
 });
